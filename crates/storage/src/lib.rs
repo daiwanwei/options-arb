@@ -101,7 +101,9 @@ impl SqlStorage {
             .map(str::trim)
             .filter(|value| !value.is_empty())
         {
-            sqlx::query(&format!("{statement};")).execute(&self.pool).await?;
+            sqlx::query(&format!("{statement};"))
+                .execute(&self.pool)
+                .await?;
         }
 
         sqlx::query(&retention_policy_sql(config))

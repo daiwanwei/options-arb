@@ -68,7 +68,10 @@ pub fn scan_cross_clob_opportunities(tickers: &[Ticker], config: &ScannerConfig)
         .collect()
 }
 
-pub fn scan_cross_venue_opportunities(tickers: &[Ticker], config: &ScannerConfig) -> Vec<ArbSignal> {
+pub fn scan_cross_venue_opportunities(
+    tickers: &[Ticker],
+    config: &ScannerConfig,
+) -> Vec<ArbSignal> {
     let mut signals = Vec::new();
 
     for (index, buy) in tickers.iter().enumerate() {
@@ -442,7 +445,9 @@ pub fn scan_vol_surface_arbitrage(
 
     for (index, left) in points.iter().enumerate() {
         for right in points.iter().skip(index + 1) {
-            if (left.strike - right.strike).abs() < 1e-9 && right.maturity_years > left.maturity_years {
+            if (left.strike - right.strike).abs() < 1e-9
+                && right.maturity_years > left.maturity_years
+            {
                 let diff = left.iv - right.iv;
                 if diff > min_calendar_gap {
                     signals.push(SurfaceArbSignal {
@@ -492,7 +497,11 @@ pub fn scan_vol_surface_arbitrage(
             .push(point);
     }
     for values in by_maturity.values_mut() {
-        values.sort_by(|a, b| a.strike.partial_cmp(&b.strike).unwrap_or(std::cmp::Ordering::Equal));
+        values.sort_by(|a, b| {
+            a.strike
+                .partial_cmp(&b.strike)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         for win in values.windows(3) {
             let left = win[0];
             let mid = win[1];
@@ -521,13 +530,19 @@ pub fn generate_surface_trade_legs(signal: &SurfaceArbSignal) -> Vec<SurfaceTrad
     match signal.signal_type {
         SurfaceSignalType::Calendar => vec![
             SurfaceTradeLeg {
-                venue: signal.buy_venue.clone().unwrap_or_else(|| "unknown".to_string()),
+                venue: signal
+                    .buy_venue
+                    .clone()
+                    .unwrap_or_else(|| "unknown".to_string()),
                 side: "BUY",
                 strike: signal.strike,
                 maturity_years: signal.maturity_years,
             },
             SurfaceTradeLeg {
-                venue: signal.sell_venue.clone().unwrap_or_else(|| "unknown".to_string()),
+                venue: signal
+                    .sell_venue
+                    .clone()
+                    .unwrap_or_else(|| "unknown".to_string()),
                 side: "SELL",
                 strike: signal.strike,
                 maturity_years: signal.maturity_years / 2.0,
@@ -535,19 +550,28 @@ pub fn generate_surface_trade_legs(signal: &SurfaceArbSignal) -> Vec<SurfaceTrad
         ],
         SurfaceSignalType::Butterfly => vec![
             SurfaceTradeLeg {
-                venue: signal.buy_venue.clone().unwrap_or_else(|| "unknown".to_string()),
+                venue: signal
+                    .buy_venue
+                    .clone()
+                    .unwrap_or_else(|| "unknown".to_string()),
                 side: "BUY",
                 strike: signal.strike,
                 maturity_years: signal.maturity_years,
             },
             SurfaceTradeLeg {
-                venue: signal.sell_venue.clone().unwrap_or_else(|| "unknown".to_string()),
+                venue: signal
+                    .sell_venue
+                    .clone()
+                    .unwrap_or_else(|| "unknown".to_string()),
                 side: "SELL",
                 strike: signal.strike * 0.95,
                 maturity_years: signal.maturity_years,
             },
             SurfaceTradeLeg {
-                venue: signal.sell_venue.clone().unwrap_or_else(|| "unknown".to_string()),
+                venue: signal
+                    .sell_venue
+                    .clone()
+                    .unwrap_or_else(|| "unknown".to_string()),
                 side: "SELL",
                 strike: signal.strike * 1.05,
                 maturity_years: signal.maturity_years,
@@ -555,13 +579,19 @@ pub fn generate_surface_trade_legs(signal: &SurfaceArbSignal) -> Vec<SurfaceTrad
         ],
         SurfaceSignalType::CrossVenueSkew => vec![
             SurfaceTradeLeg {
-                venue: signal.buy_venue.clone().unwrap_or_else(|| "unknown".to_string()),
+                venue: signal
+                    .buy_venue
+                    .clone()
+                    .unwrap_or_else(|| "unknown".to_string()),
                 side: "BUY",
                 strike: signal.strike,
                 maturity_years: signal.maturity_years,
             },
             SurfaceTradeLeg {
-                venue: signal.sell_venue.clone().unwrap_or_else(|| "unknown".to_string()),
+                venue: signal
+                    .sell_venue
+                    .clone()
+                    .unwrap_or_else(|| "unknown".to_string()),
                 side: "SELL",
                 strike: signal.strike,
                 maturity_years: signal.maturity_years,

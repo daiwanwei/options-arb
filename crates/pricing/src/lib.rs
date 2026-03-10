@@ -67,8 +67,7 @@ pub fn black_scholes_greeks(
             -(spot * pdf * volatility) / (2.0 * sqrt_t) - rate * strike * discount * norm_cdf(d2)
         }
         OptionKind::Put => {
-            -(spot * pdf * volatility) / (2.0 * sqrt_t)
-                + rate * strike * discount * norm_cdf(-d2)
+            -(spot * pdf * volatility) / (2.0 * sqrt_t) + rate * strike * discount * norm_cdf(-d2)
         }
     };
     let rho = match kind {
@@ -98,8 +97,9 @@ pub fn higher_order_greeks(
     let vega = spot * pdf * sqrt_t;
     let vanna = (vega / spot) * (1.0 - d1 / (volatility * sqrt_t));
     let vomma = vega * d1 * d2 / volatility;
-    let charm = -pdf * ((2.0 * rate * maturity_years - d2 * volatility * sqrt_t)
-        / (2.0 * maturity_years * volatility * sqrt_t));
+    let charm = -pdf
+        * ((2.0 * rate * maturity_years - d2 * volatility * sqrt_t)
+            / (2.0 * maturity_years * volatility * sqrt_t));
 
     HigherOrderGreeks {
         vanna,

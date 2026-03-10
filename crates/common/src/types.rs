@@ -152,9 +152,8 @@ impl TryFrom<DeribitTicker> for Ticker {
     type Error = &'static str;
 
     fn try_from(value: DeribitTicker) -> Result<Self, Self::Error> {
-        let instrument =
-            Instrument::from_clob_symbol(VenueId::Deribit, &value.instrument_name)
-                .ok_or("invalid deribit instrument")?;
+        let instrument = Instrument::from_clob_symbol(VenueId::Deribit, &value.instrument_name)
+            .ok_or("invalid deribit instrument")?;
         let mid = match (value.best_bid_price, value.best_ask_price) {
             (Some(bid), Some(ask)) => Some((bid + ask) / 2.0),
             _ => None,

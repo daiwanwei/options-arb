@@ -10,7 +10,14 @@ fn option_ticker(venue: VenueId, kind: OptionType, mid: f64) -> Ticker {
             option_type: kind,
             style: OptionStyle::European,
             venue,
-            venue_symbol: format!("BTC-27DEC24-50000-{}", if matches!(kind, OptionType::Call) {"C"} else {"P"}),
+            venue_symbol: format!(
+                "BTC-27DEC24-50000-{}",
+                if matches!(kind, OptionType::Call) {
+                    "C"
+                } else {
+                    "P"
+                }
+            ),
         },
         venue,
         bid: Some(mid - 1.0),

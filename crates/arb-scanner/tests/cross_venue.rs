@@ -1,4 +1,6 @@
-use arb_scanner::{build_alerts, scan_cross_venue_opportunities, scan_put_call_parity, FeeModel, ScannerConfig};
+use arb_scanner::{
+    build_alerts, scan_cross_venue_opportunities, scan_put_call_parity, FeeModel, ScannerConfig,
+};
 use common::types::{Greeks, Instrument, OptionStyle, OptionType, Ticker, VenueId};
 
 fn ticker(venue: VenueId, option_type: OptionType, bid_iv: f64, ask_iv: f64) -> Ticker {
@@ -10,7 +12,14 @@ fn ticker(venue: VenueId, option_type: OptionType, bid_iv: f64, ask_iv: f64) -> 
             option_type,
             style: OptionStyle::European,
             venue,
-            venue_symbol: format!("ETH-28MAR26-3000-{}", if matches!(option_type, OptionType::Call) {"C"} else {"P"}),
+            venue_symbol: format!(
+                "ETH-28MAR26-3000-{}",
+                if matches!(option_type, OptionType::Call) {
+                    "C"
+                } else {
+                    "P"
+                }
+            ),
         },
         venue,
         bid: Some(200.0),

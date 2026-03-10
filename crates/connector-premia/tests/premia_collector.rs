@@ -1,8 +1,8 @@
+use common::types::VenueId;
 use connector_premia::{
     build_quote_request, normalize_quote_to_ticker, premia_oracle_address, premia_subgraph_url,
     PREMIA_QUOTES_WS,
 };
-use common::types::VenueId;
 
 #[test]
 fn exposes_required_endpoints() {
@@ -20,14 +20,8 @@ fn builds_pool_quote_request() {
 
 #[test]
 fn normalizes_quote_to_common_ticker() {
-    let ticker = normalize_quote_to_ticker(
-        "ETH-28MAR26-3000-C",
-        225.0,
-        226.0,
-        0.62,
-        2,
-    )
-    .expect("normalization should work");
+    let ticker = normalize_quote_to_ticker("ETH-28MAR26-3000-C", 225.0, 226.0, 0.62, 2)
+        .expect("normalization should work");
 
     assert_eq!(ticker.venue, VenueId::Premia);
     assert_eq!(ticker.bid, Some(225.0));
