@@ -484,7 +484,12 @@ dependencies = [
 name = "executor"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "common",
+ "reqwest",
+ "risk-manager",
+ "serde",
+ "tokio",
 ]
 
 [[package]]
