@@ -154,7 +154,9 @@ dependencies = [
 name = "connector-aevo"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "common",
+ "serde",
 ]
 
 [[package]]
