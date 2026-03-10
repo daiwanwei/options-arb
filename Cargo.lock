@@ -208,7 +208,16 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "common",
+ "futures-util",
+ "hex",
+ "hmac",
+ "reqwest",
  "serde",
+ "serde_json",
+ "sha2",
+ "tokio",
+ "tokio-stream",
+ "tokio-tungstenite",
 ]
 
 [[package]]
