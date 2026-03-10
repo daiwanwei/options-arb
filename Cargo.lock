@@ -106,14 +106,20 @@ dependencies = [
 name = "connector-deribit"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "common",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
 name = "connector-derive"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "common",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
