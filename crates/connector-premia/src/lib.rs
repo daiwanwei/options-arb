@@ -3,7 +3,7 @@ use common::types::{Greeks, Instrument, OptionStyle, OptionType, Ticker, VenueId
 
 pub const PREMIA_QUOTES_WS: &str = "wss://quotes.premia.finance";
 const PREMIA_SUBGRAPH: &str = "https://api.thegraph.com/subgraphs/name/premian-labs/premia-blue";
-const PREMIA_ORACLE: &str = "0x23c74Cb00000000000000000000000000000000";
+const PREMIA_ORACLE: Option<&str> = None;
 
 #[derive(Debug, Clone)]
 pub struct PremiaQuoteRequest {
@@ -17,8 +17,15 @@ pub fn premia_subgraph_url() -> &'static str {
     PREMIA_SUBGRAPH
 }
 
-pub fn premia_oracle_address() -> &'static str {
-    PREMIA_ORACLE
+pub fn premia_oracle_address() -> Option<&'static str> {
+    PREMIA_ORACLE.filter(|value| is_valid_evm_address(value))
+}
+
+pub fn is_valid_evm_address(value: &str) -> bool {
+    if value.len() != 42 || !value.starts_with("0x") {
+        return false;
+    }
+    value[2..].chars().all(|item| item.is_ascii_hexdigit())
 }
 
 pub fn build_quote_request(chain: &str, pool: &str, size: f64, is_buy: bool) -> PremiaQuoteRequest {

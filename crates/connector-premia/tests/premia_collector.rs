@@ -1,14 +1,17 @@
 use common::types::VenueId;
 use connector_premia::{
-    build_quote_request, normalize_quote_to_ticker, premia_oracle_address, premia_subgraph_url,
-    PREMIA_QUOTES_WS,
+    build_quote_request, is_valid_evm_address, normalize_quote_to_ticker, premia_oracle_address,
+    premia_subgraph_url, PREMIA_QUOTES_WS,
 };
 
 #[test]
 fn exposes_required_endpoints() {
     assert_eq!(PREMIA_QUOTES_WS, "wss://quotes.premia.finance");
     assert!(premia_subgraph_url().contains("premia-blue"));
-    assert!(premia_oracle_address().starts_with("0x"));
+    assert!(premia_oracle_address().is_none());
+    assert!(is_valid_evm_address(
+        "0x1111111111111111111111111111111111111111"
+    ));
 }
 
 #[test]
