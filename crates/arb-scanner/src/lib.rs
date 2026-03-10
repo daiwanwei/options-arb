@@ -1,4 +1,6 @@
-use common::types::{match_instrument, Ticker, VenueId};
+use std::collections::HashMap;
+
+use common::types::{match_instrument, OptionType, Ticker, VenueId};
 
 #[derive(Debug, Clone)]
 pub struct ScannerConfig {
@@ -11,6 +13,10 @@ pub struct ScannerConfig {
 pub struct FeeModel {
     pub deribit_taker_rate: f64,
     pub derive_taker_rate: f64,
+    pub aevo_taker_rate: f64,
+    pub premia_taker_rate: f64,
+    pub stryke_protocol_rate: f64,
+    pub estimated_gas_cost: f64,
 }
 
 impl Default for FeeModel {
@@ -18,6 +24,10 @@ impl Default for FeeModel {
         Self {
             deribit_taker_rate: 0.0003,
             derive_taker_rate: 0.0005,
+            aevo_taker_rate: 0.0005,
+            premia_taker_rate: 0.001,
+            stryke_protocol_rate: 0.15,
+            estimated_gas_cost: 0.05,
         }
     }
 }
@@ -30,9 +40,35 @@ pub struct ArbSignal {
     pub iv_spread: f64,
     pub estimated_pnl: f64,
     pub timestamp_ms: i64,
+    pub signal_type: &'static str,
+}
+
+#[derive(Debug, Clone)]
+pub struct ParitySignal {
+    pub venue: VenueId,
+    pub instrument_group: String,
+    pub parity_gap: f64,
+    pub timestamp_ms: i64,
 }
 
 pub fn scan_cross_clob_opportunities(tickers: &[Ticker], config: &ScannerConfig) -> Vec<ArbSignal> {
+    scan_cross_venue_opportunities(tickers, config)
+        .into_iter()
+        .filter(|signal| {
+            matches!(
+                (signal.buy_venue, signal.sell_venue),
+                (VenueId::Deribit, VenueId::Derive)
+                    | (VenueId::Derive, VenueId::Deribit)
+                    | (VenueId::Deribit, VenueId::Aevo)
+                    | (VenueId::Aevo, VenueId::Deribit)
+                    | (VenueId::Derive, VenueId::Aevo)
+                    | (VenueId::Aevo, VenueId::Derive)
+            )
+        })
+        .collect()
+}
+
+pub fn scan_cross_venue_opportunities(tickers: &[Ticker], config: &ScannerConfig) -> Vec<ArbSignal> {
     let mut signals = Vec::new();
 
     for (index, buy) in tickers.iter().enumerate() {
@@ -53,10 +89,72 @@ pub fn scan_cross_clob_opportunities(tickers: &[Ticker], config: &ScannerConfig)
     signals
 }
 
+pub fn scan_put_call_parity(tickers: &[Ticker], risk_free_rate: f64) -> Vec<ParitySignal> {
+    let mut grouped: HashMap<(VenueId, String), (Option<Ticker>, Option<Ticker>)> = HashMap::new();
+
+    for ticker in tickers {
+        let key = (
+            ticker.venue,
+            format!(
+                "{}:{}:{}",
+                ticker.instrument.underlying, ticker.instrument.expiry, ticker.instrument.strike
+            ),
+        );
+        let entry = grouped.entry(key).or_insert((None, None));
+        match ticker.instrument.option_type {
+            OptionType::Call => entry.0 = Some(ticker.clone()),
+            OptionType::Put => entry.1 = Some(ticker.clone()),
+        }
+    }
+
+    let mut signals = Vec::new();
+    for ((venue, group), (call, put)) in grouped {
+        let (Some(call), Some(put)) = (call, put) else {
+            continue;
+        };
+        let call_price = call.mid.or(call.mark_price).unwrap_or(0.0);
+        let put_price = put.mid.or(put.mark_price).unwrap_or(0.0);
+        let spot = call.index_price.or(put.index_price).unwrap_or(0.0);
+        let strike = call.instrument.strike;
+        let t = year_fraction_from_expiry_code(&call.instrument.expiry);
+
+        let parity_gap =
+            (call_price - put_price) - (spot - strike * (-risk_free_rate * t.max(1e-6)).exp());
+
+        if parity_gap.abs() > 1.0 {
+            signals.push(ParitySignal {
+                venue,
+                instrument_group: group,
+                parity_gap,
+                timestamp_ms: call.timestamp_ms.min(put.timestamp_ms),
+            });
+        }
+    }
+
+    signals
+}
+
+pub fn build_alerts(signals: &[ArbSignal]) -> Vec<String> {
+    signals
+        .iter()
+        .map(|signal| {
+            format!(
+                "[{}] {} buy {:?} sell {:?} spread {:.4} pnl {:.4}",
+                signal.signal_type,
+                signal.instrument_symbol,
+                signal.buy_venue,
+                signal.sell_venue,
+                signal.iv_spread,
+                signal.estimated_pnl
+            )
+        })
+        .collect()
+}
+
 pub fn replay_backtest(frames: Vec<Vec<Ticker>>, config: &ScannerConfig) -> Vec<ArbSignal> {
     let mut all = Vec::new();
     for frame in frames {
-        all.extend(scan_cross_clob_opportunities(&frame, config));
+        all.extend(scan_cross_venue_opportunities(&frame, config));
     }
     all
 }
@@ -86,6 +184,7 @@ fn build_signal(buy: &Ticker, sell: &Ticker, config: &ScannerConfig) -> Option<A
         iv_spread,
         estimated_pnl,
         timestamp_ms: buy.timestamp_ms.min(sell.timestamp_ms),
+        signal_type: "cross_venue_iv",
     })
 }
 
@@ -93,21 +192,24 @@ fn estimated_fees(buy: &Ticker, sell: &Ticker, fee_model: &FeeModel) -> f64 {
     let buy_notional = buy.ask.unwrap_or(0.0);
     let sell_notional = sell.bid.unwrap_or(0.0);
 
-    let buy_fee = match buy.venue {
-        VenueId::Deribit => buy_notional * fee_model.deribit_taker_rate,
-        VenueId::Derive => buy_notional * fee_model.derive_taker_rate,
-        _ => buy_notional * fee_model.derive_taker_rate,
-    };
-    let sell_fee = match sell.venue {
-        VenueId::Deribit => sell_notional * fee_model.deribit_taker_rate,
-        VenueId::Derive => sell_notional * fee_model.derive_taker_rate,
-        _ => sell_notional * fee_model.derive_taker_rate,
-    };
+    venue_fee(buy.venue, buy_notional, fee_model) + venue_fee(sell.venue, sell_notional, fee_model)
+}
 
-    buy_fee + sell_fee
+fn venue_fee(venue: VenueId, notional: f64, fee_model: &FeeModel) -> f64 {
+    match venue {
+        VenueId::Deribit => notional * fee_model.deribit_taker_rate,
+        VenueId::Derive => notional * fee_model.derive_taker_rate,
+        VenueId::Aevo => notional * fee_model.aevo_taker_rate,
+        VenueId::Premia => notional * fee_model.premia_taker_rate + fee_model.estimated_gas_cost,
+        VenueId::Stryke => notional * fee_model.stryke_protocol_rate + fee_model.estimated_gas_cost,
+    }
 }
 
 fn estimated_slippage(buy: &Ticker, sell: &Ticker, bps: f64) -> f64 {
     let notional = buy.ask.unwrap_or(0.0) + sell.bid.unwrap_or(0.0);
     notional * bps / 10_000.0
+}
+
+fn year_fraction_from_expiry_code(_expiry: &str) -> f64 {
+    30.0 / 365.0
 }
