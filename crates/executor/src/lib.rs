@@ -1,4 +1,10 @@
 use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
+
+use anyhow::{anyhow, Result};
+use risk_manager::FlattenOrder;
+use tokio::time::{timeout, Duration};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OrderStatus {
@@ -82,6 +88,143 @@ pub fn execute_atomic_pair(buy_leg: &OrderRequest, sell_leg: &OrderRequest) -> A
     AtomicExecutionPlan {
         legs: vec![buy_leg.clone(), sell_leg.clone()],
         cancel_on_disconnect: true,
+    }
+}
+
+pub trait VenueOrderClient {
+    fn place_order<'a>(
+        &'a self,
+        request: &'a OrderRequest,
+    ) -> Pin<Box<dyn Future<Output = Result<VenueOrder>> + Send + 'a>>;
+}
+
+pub async fn execute_atomic_pair_live<C: VenueOrderClient + Sync>(
+    client: &C,
+    buy_leg: &OrderRequest,
+    sell_leg: &OrderRequest,
+    timeout_ms: u64,
+) -> Result<Vec<VenueOrder>> {
+    let execution = timeout(
+        Duration::from_millis(timeout_ms),
+        async {
+            let buy_future = client.place_order(buy_leg);
+            let sell_future = client.place_order(sell_leg);
+            tokio::try_join!(buy_future, sell_future)
+        },
+    )
+    .await
+    .map_err(|_| anyhow!("atomic execution timed out"))?;
+
+    let (buy_order, sell_order) = execution?;
+    Ok(vec![buy_order, sell_order])
+}
+
+pub fn flatten_orders_to_requests(venue: &str, flatten_orders: &[FlattenOrder]) -> Vec<OrderRequest> {
+    flatten_orders
+        .iter()
+        .filter(|order| order.size.abs() > 0.0)
+        .map(|order| OrderRequest {
+            venue: venue.to_string(),
+            instrument: order.instrument.clone(),
+            size: order.size.abs(),
+            is_buy: order.size > 0.0,
+        })
+        .collect()
+}
+
+pub async fn execute_kill_switch<C: VenueOrderClient + Sync>(
+    client: &C,
+    venue: &str,
+    flatten_orders: &[FlattenOrder],
+    timeout_ms: u64,
+) -> Result<Vec<VenueOrder>> {
+    let requests = flatten_orders_to_requests(venue, flatten_orders);
+    let mut placed_orders = Vec::with_capacity(requests.len());
+
+    for request in requests {
+        let placed = timeout(Duration::from_millis(timeout_ms), client.place_order(&request))
+            .await
+            .map_err(|_| anyhow!("kill switch execution timed out"))??;
+        placed_orders.push(placed);
+    }
+
+    Ok(placed_orders)
+}
+
+#[derive(Clone, Default)]
+pub struct HttpOrderClient {
+    client: reqwest::Client,
+    venue_endpoints: HashMap<String, String>,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct HttpOrderPayload<'a> {
+    instrument: &'a str,
+    size: f64,
+    side: &'a str,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct HttpOrderResponse {
+    order_id: Option<String>,
+    status: Option<String>,
+}
+
+impl HttpOrderClient {
+    pub fn with_endpoint(mut self, venue: &str, endpoint: &str) -> Self {
+        self.venue_endpoints
+            .insert(venue.to_string(), endpoint.to_string());
+        self
+    }
+}
+
+impl VenueOrderClient for HttpOrderClient {
+    fn place_order<'a>(
+        &'a self,
+        request: &'a OrderRequest,
+    ) -> Pin<Box<dyn Future<Output = Result<VenueOrder>> + Send + 'a>> {
+        Box::pin(async move {
+            let endpoint = self
+                .venue_endpoints
+                .get(&request.venue)
+                .ok_or_else(|| anyhow!("missing endpoint for venue {}", request.venue))?;
+
+            let payload = HttpOrderPayload {
+                instrument: &request.instrument,
+                size: request.size,
+                side: if request.is_buy { "buy" } else { "sell" },
+            };
+
+            let response = self
+                .client
+                .post(endpoint)
+                .json(&payload)
+                .send()
+                .await?
+                .error_for_status()?;
+
+            let parsed = response.json::<HttpOrderResponse>().await.ok();
+            let order_id = parsed
+                .as_ref()
+                .and_then(|item| item.order_id.clone())
+                .unwrap_or_else(|| format!("{}:{}", request.venue, request.instrument));
+            let status = match parsed
+                .as_ref()
+                .and_then(|item| item.status.as_deref())
+                .unwrap_or("pending")
+            {
+                "filled" => OrderStatus::Filled,
+                "partial" => OrderStatus::Partial,
+                "cancelled" => OrderStatus::Cancelled,
+                _ => OrderStatus::Pending,
+            };
+
+            Ok(VenueOrder {
+                id: order_id,
+                venue: request.venue.clone(),
+                status,
+            })
+        })
     }
 }
 

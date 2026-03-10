@@ -5,3 +5,11 @@ edition = "2021"
 
 [dependencies]
 common = { path = "../common" }
+anyhow = "1"
+risk-manager = { path = "../risk-manager" }
+tokio = { workspace = true, features = ["time"] }
+reqwest = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
