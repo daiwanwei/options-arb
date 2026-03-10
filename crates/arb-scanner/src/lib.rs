@@ -388,3 +388,184 @@ pub fn scan_0dte_opportunities(
 
     out
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SurfaceSignalType {
+    Calendar,
+    Butterfly,
+    CrossVenueSkew,
+}
+
+#[derive(Debug, Clone)]
+pub struct SurfacePointInput {
+    pub venue: String,
+    pub strike: f64,
+    pub maturity_years: f64,
+    pub iv: f64,
+}
+
+impl SurfacePointInput {
+    pub fn new(venue: &str, strike: f64, maturity_years: f64, iv: f64) -> Self {
+        Self {
+            venue: venue.to_string(),
+            strike,
+            maturity_years,
+            iv,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct SurfaceArbSignal {
+    pub signal_type: SurfaceSignalType,
+    pub description: String,
+    pub buy_venue: Option<String>,
+    pub sell_venue: Option<String>,
+    pub strike: f64,
+    pub maturity_years: f64,
+}
+
+#[derive(Debug, Clone)]
+pub struct SurfaceTradeLeg {
+    pub venue: String,
+    pub side: &'static str,
+    pub strike: f64,
+    pub maturity_years: f64,
+}
+
+pub fn scan_vol_surface_arbitrage(
+    points: &[SurfacePointInput],
+    min_calendar_gap: f64,
+    min_skew_gap: f64,
+) -> Vec<SurfaceArbSignal> {
+    let mut signals = Vec::new();
+
+    for (index, left) in points.iter().enumerate() {
+        for right in points.iter().skip(index + 1) {
+            if (left.strike - right.strike).abs() < 1e-9 && right.maturity_years > left.maturity_years {
+                let diff = left.iv - right.iv;
+                if diff > min_calendar_gap {
+                    signals.push(SurfaceArbSignal {
+                        signal_type: SurfaceSignalType::Calendar,
+                        description: format!(
+                            "calendar inversion strike={} short_iv={} long_iv={}",
+                            left.strike, left.iv, right.iv
+                        ),
+                        buy_venue: Some(right.venue.clone()),
+                        sell_venue: Some(left.venue.clone()),
+                        strike: left.strike,
+                        maturity_years: right.maturity_years,
+                    });
+                }
+            }
+
+            if (left.maturity_years - right.maturity_years).abs() < 1e-6
+                && (left.strike - right.strike).abs() > 1.0
+                && left.venue != right.venue
+            {
+                let skew_gap = (left.iv - right.iv).abs();
+                if skew_gap > min_skew_gap {
+                    let (buy, sell) = if left.iv < right.iv {
+                        (left.venue.clone(), right.venue.clone())
+                    } else {
+                        (right.venue.clone(), left.venue.clone())
+                    };
+                    signals.push(SurfaceArbSignal {
+                        signal_type: SurfaceSignalType::CrossVenueSkew,
+                        description: format!("cross venue skew gap={skew_gap}"),
+                        buy_venue: Some(buy),
+                        sell_venue: Some(sell),
+                        strike: left.strike,
+                        maturity_years: left.maturity_years,
+                    });
+                }
+            }
+        }
+    }
+
+    // Simple butterfly convexity check at same maturity on sorted strikes
+    let mut by_maturity: HashMap<i64, Vec<&SurfacePointInput>> = HashMap::new();
+    for point in points {
+        by_maturity
+            .entry((point.maturity_years * 10000.0) as i64)
+            .or_default()
+            .push(point);
+    }
+    for values in by_maturity.values_mut() {
+        values.sort_by(|a, b| a.strike.partial_cmp(&b.strike).unwrap_or(std::cmp::Ordering::Equal));
+        for win in values.windows(3) {
+            let left = win[0];
+            let mid = win[1];
+            let right = win[2];
+            let wing_avg = (left.iv + right.iv) / 2.0;
+            if mid.iv + min_skew_gap < wing_avg {
+                signals.push(SurfaceArbSignal {
+                    signal_type: SurfaceSignalType::Butterfly,
+                    description: format!(
+                        "butterfly convexity violation at strike {} maturity {}",
+                        mid.strike, mid.maturity_years
+                    ),
+                    buy_venue: Some(mid.venue.clone()),
+                    sell_venue: Some(left.venue.clone()),
+                    strike: mid.strike,
+                    maturity_years: mid.maturity_years,
+                });
+            }
+        }
+    }
+
+    signals
+}
+
+pub fn generate_surface_trade_legs(signal: &SurfaceArbSignal) -> Vec<SurfaceTradeLeg> {
+    match signal.signal_type {
+        SurfaceSignalType::Calendar => vec![
+            SurfaceTradeLeg {
+                venue: signal.buy_venue.clone().unwrap_or_else(|| "unknown".to_string()),
+                side: "BUY",
+                strike: signal.strike,
+                maturity_years: signal.maturity_years,
+            },
+            SurfaceTradeLeg {
+                venue: signal.sell_venue.clone().unwrap_or_else(|| "unknown".to_string()),
+                side: "SELL",
+                strike: signal.strike,
+                maturity_years: signal.maturity_years / 2.0,
+            },
+        ],
+        SurfaceSignalType::Butterfly => vec![
+            SurfaceTradeLeg {
+                venue: signal.buy_venue.clone().unwrap_or_else(|| "unknown".to_string()),
+                side: "BUY",
+                strike: signal.strike,
+                maturity_years: signal.maturity_years,
+            },
+            SurfaceTradeLeg {
+                venue: signal.sell_venue.clone().unwrap_or_else(|| "unknown".to_string()),
+                side: "SELL",
+                strike: signal.strike * 0.95,
+                maturity_years: signal.maturity_years,
+            },
+            SurfaceTradeLeg {
+                venue: signal.sell_venue.clone().unwrap_or_else(|| "unknown".to_string()),
+                side: "SELL",
+                strike: signal.strike * 1.05,
+                maturity_years: signal.maturity_years,
+            },
+        ],
+        SurfaceSignalType::CrossVenueSkew => vec![
+            SurfaceTradeLeg {
+                venue: signal.buy_venue.clone().unwrap_or_else(|| "unknown".to_string()),
+                side: "BUY",
+                strike: signal.strike,
+                maturity_years: signal.maturity_years,
+            },
+            SurfaceTradeLeg {
+                venue: signal.sell_venue.clone().unwrap_or_else(|| "unknown".to_string()),
+                side: "SELL",
+                strike: signal.strike,
+                maturity_years: signal.maturity_years,
+            },
+        ],
+    }
+}
