@@ -259,3 +259,67 @@ pub fn scan_cefi_amm_vol_lag(
 
     out
 }
+
+#[derive(Debug, Clone)]
+pub struct CrossVenueParitySignal {
+    pub instrument_group: String,
+    pub venue_a: VenueId,
+    pub venue_b: VenueId,
+    pub forward_a: f64,
+    pub forward_b: f64,
+    pub forward_gap: f64,
+}
+
+pub fn scan_cross_venue_parity_dislocations(
+    tickers: &[Ticker],
+    risk_free_rate: f64,
+    min_forward_gap: f64,
+) -> Vec<CrossVenueParitySignal> {
+    let mut venue_forwards: HashMap<(VenueId, String), f64> = HashMap::new();
+
+    for parity in scan_put_call_parity(tickers, risk_free_rate) {
+        let (underlying, expiry, strike) = parse_group_key(&parity.instrument_group);
+        let t = year_fraction_from_expiry_code(&expiry);
+        let forward = strike * (-risk_free_rate * t.max(1e-6)).exp() + parity.parity_gap;
+        let key = (parity.venue, format!("{underlying}:{expiry}:{strike}"));
+        venue_forwards.insert(key, forward);
+    }
+
+    let mut grouped: HashMap<String, Vec<(VenueId, f64)>> = HashMap::new();
+    for ((venue, group), forward) in venue_forwards {
+        grouped.entry(group).or_default().push((venue, forward));
+    }
+
+    let mut signals = Vec::new();
+    for (group, values) in grouped {
+        for (i, (venue_a, forward_a)) in values.iter().enumerate() {
+            for (venue_b, forward_b) in values.iter().skip(i + 1) {
+                let gap = forward_a - forward_b;
+                if gap.abs() < min_forward_gap {
+                    continue;
+                }
+                signals.push(CrossVenueParitySignal {
+                    instrument_group: group.clone(),
+                    venue_a: *venue_a,
+                    venue_b: *venue_b,
+                    forward_a: *forward_a,
+                    forward_b: *forward_b,
+                    forward_gap: gap,
+                });
+            }
+        }
+    }
+
+    signals
+}
+
+fn parse_group_key(value: &str) -> (String, String, f64) {
+    let mut parts = value.split(':');
+    let underlying = parts.next().unwrap_or_default().to_string();
+    let expiry = parts.next().unwrap_or_default().to_string();
+    let strike = parts
+        .next()
+        .and_then(|item| item.parse::<f64>().ok())
+        .unwrap_or_default();
+    (underlying, expiry, strike)
+}
