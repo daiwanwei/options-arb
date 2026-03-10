@@ -4,6 +4,8 @@ use serde_json::Value;
 
 pub const DERIVE_PROD_WS: &str = "wss://api.lyra.finance/ws";
 pub const DERIVE_TESTNET_WS: &str = "wss://api-demo.lyra.finance/ws";
+pub const DERIVE_PROD_REST: &str = "https://api.lyra.finance";
+pub const DERIVE_TESTNET_REST: &str = "https://api-demo.lyra.finance";
 
 pub fn build_json_rpc_request(id: u64, method: &str, params: Value) -> Value {
     serde_json::json!({
@@ -12,6 +14,42 @@ pub fn build_json_rpc_request(id: u64, method: &str, params: Value) -> Value {
         "method": method,
         "params": params,
     })
+}
+
+pub fn build_get_all_instruments_request(id: u64, base_currency: &str) -> Value {
+    build_json_rpc_request(
+        id,
+        "public/get_all_instruments",
+        serde_json::json!({ "base_currency": base_currency }),
+    )
+}
+
+pub fn build_get_ticker_request(id: u64, instrument_name: &str) -> Value {
+    build_json_rpc_request(
+        id,
+        "public/get_ticker",
+        serde_json::json!({ "instrument_name": instrument_name }),
+    )
+}
+
+pub fn build_session_key_auth_request(id: u64, session_key: &str) -> Value {
+    build_json_rpc_request(
+        id,
+        "private/login",
+        serde_json::json!({
+            "grant_type": "session_key",
+            "session_key": session_key,
+        }),
+    )
+}
+
+pub fn parse_instrument_symbols(response: &Value) -> Vec<String> {
+    response["result"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|item| item["instrument_name"].as_str().map(ToString::to_string))
+        .collect()
 }
 
 pub fn reconnect_delay_ms(attempt: u32) -> u64 {
