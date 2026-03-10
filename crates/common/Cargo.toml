@@ -1,0 +1,10 @@
+[package]
+name = "common"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+config = "0.15"
+dotenvy = "0.15"
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
