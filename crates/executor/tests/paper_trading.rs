@@ -36,3 +36,19 @@ fn provides_grafana_template_json() {
     assert!(json.contains("fill_rate"));
     assert!(json.contains("pnl"));
 }
+
+#[test]
+fn renders_prometheus_metrics_text() {
+    let snapshot = PrometheusSnapshot {
+        signals_per_min: 1.2,
+        fill_rate: 0.5,
+        pnl: 42.0,
+        avg_latency_ms: 10.0,
+    };
+
+    let text = executor::render_prometheus(&snapshot, 0.75);
+    assert!(text.contains("options_arb_signals_per_min"));
+    assert!(text.contains("options_arb_fill_rate"));
+    assert!(text.contains("options_arb_pnl"));
+    assert!(text.contains("options_arb_risk_utilization"));
+}

@@ -197,3 +197,18 @@ pub fn build_grafana_dashboard_template() -> String {
 }"#
     .to_string()
 }
+
+pub fn render_prometheus(snapshot: &PrometheusSnapshot, risk_utilization: f64) -> String {
+    format!(
+        "# TYPE options_arb_signals_per_min gauge\noptions_arb_signals_per_min {signals}\n\
+# TYPE options_arb_fill_rate gauge\noptions_arb_fill_rate {fill_rate}\n\
+# TYPE options_arb_pnl gauge\noptions_arb_pnl {pnl}\n\
+# TYPE options_arb_latency_ms gauge\noptions_arb_latency_ms {latency}\n\
+# TYPE options_arb_risk_utilization gauge\noptions_arb_risk_utilization {risk}\n",
+        signals = snapshot.signals_per_min,
+        fill_rate = snapshot.fill_rate,
+        pnl = snapshot.pnl,
+        latency = snapshot.avg_latency_ms,
+        risk = risk_utilization,
+    )
+}
