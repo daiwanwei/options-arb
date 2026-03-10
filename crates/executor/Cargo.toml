@@ -10,6 +10,7 @@ risk-manager = { path = "../risk-manager" }
 tokio = { workspace = true, features = ["time"] }
 reqwest = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
+futures = "0.3"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

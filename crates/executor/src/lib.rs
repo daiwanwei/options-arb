@@ -3,6 +3,7 @@ use std::future::Future;
 use std::pin::Pin;
 
 use anyhow::{anyhow, Result};
+use futures::future::join_all;
 use risk_manager::FlattenOrder;
 use tokio::time::{timeout, Duration};
 
@@ -137,18 +138,23 @@ pub async fn execute_kill_switch<C: VenueOrderClient + Sync>(
     venue: &str,
     flatten_orders: &[FlattenOrder],
     timeout_ms: u64,
-) -> Result<Vec<VenueOrder>> {
+) -> Result<Vec<Result<VenueOrder>>> {
     let requests = flatten_orders_to_requests(venue, flatten_orders);
-    let mut placed_orders = Vec::with_capacity(requests.len());
+    let timeout_duration = Duration::from_millis(timeout_ms);
 
-    for request in requests {
-        let placed = timeout(Duration::from_millis(timeout_ms), client.place_order(&request))
-            .await
-            .map_err(|_| anyhow!("kill switch execution timed out"))??;
-        placed_orders.push(placed);
-    }
+    let tasks: Vec<_> = requests
+        .into_iter()
+        .map(|request| {
+            let client_ref = client;
+            async move {
+                timeout(timeout_duration, client_ref.place_order(&request))
+                    .await
+                    .map_err(|_| anyhow!("kill switch order timed out"))?
+            }
+        })
+        .collect();
 
-    Ok(placed_orders)
+    Ok(join_all(tasks).await)
 }
 
 #[derive(Clone, Default)]
