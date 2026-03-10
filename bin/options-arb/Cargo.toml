@@ -6,7 +6,11 @@ edition = "2021"
 [dependencies]
 common = { path = "../../crates/common" }
 executor = { path = "../../crates/executor" }
+arb-scanner = { path = "../../crates/arb-scanner" }
+risk-manager = { path = "../../crates/risk-manager" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util"] }
+tokio-stream = "0.1"
+futures-util = "0.3"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 anyhow = "1"
