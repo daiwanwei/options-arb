@@ -1368,9 +1368,13 @@ name = "options-arb"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "arb-scanner",
  "common",
  "executor",
+ "futures-util",
+ "risk-manager",
  "tokio",
+ "tokio-stream",
  "tracing",
  "tracing-subscriber",
 ]
