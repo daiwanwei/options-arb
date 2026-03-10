@@ -1,3 +1,4 @@
+use chrono::{NaiveDate, Utc};
 use std::collections::HashMap;
 
 use common::types::{match_instrument, OptionType, Ticker, VenueId};
@@ -213,8 +214,46 @@ fn estimated_slippage(buy: &Ticker, sell: &Ticker, bps: f64) -> f64 {
     notional * bps / 10_000.0
 }
 
-fn year_fraction_from_expiry_code(_expiry: &str) -> f64 {
-    30.0 / 365.0
+fn year_fraction_from_expiry_code(expiry: &str) -> f64 {
+    let now = Utc::now().date_naive();
+    year_fraction_from_expiry_code_with_now(expiry, now)
+}
+
+fn year_fraction_from_expiry_code_with_now(expiry: &str, now: NaiveDate) -> f64 {
+    let maybe_date = parse_expiry_date(expiry);
+    let Some(expiry_date) = maybe_date else {
+        return 30.0 / 365.0;
+    };
+
+    let days = (expiry_date - now).num_days().max(0) as f64;
+    days / 365.0
+}
+
+fn parse_expiry_date(expiry: &str) -> Option<NaiveDate> {
+    if expiry.len() != 7 {
+        return None;
+    }
+
+    let day = expiry[0..2].parse::<u32>().ok()?;
+    let month = match &expiry[2..5].to_ascii_uppercase()[..] {
+        "JAN" => 1,
+        "FEB" => 2,
+        "MAR" => 3,
+        "APR" => 4,
+        "MAY" => 5,
+        "JUN" => 6,
+        "JUL" => 7,
+        "AUG" => 8,
+        "SEP" => 9,
+        "OCT" => 10,
+        "NOV" => 11,
+        "DEC" => 12,
+        _ => return None,
+    };
+    let year_suffix = expiry[5..7].parse::<i32>().ok()?;
+    let year = 2000 + year_suffix;
+
+    NaiveDate::from_ymd_opt(year, month, day)
 }
 
 #[derive(Debug, Clone)]
@@ -597,5 +636,31 @@ pub fn generate_surface_trade_legs(signal: &SurfaceArbSignal) -> Vec<SurfaceTrad
                 maturity_years: signal.maturity_years,
             },
         ],
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_expiry_date, year_fraction_from_expiry_code_with_now};
+    use chrono::NaiveDate;
+
+    #[test]
+    fn parses_exchange_expiry_code() {
+        let parsed = parse_expiry_date("28MAR26").expect("date parsed");
+        assert_eq!(parsed, NaiveDate::from_ymd_opt(2026, 3, 28).unwrap());
+    }
+
+    #[test]
+    fn computes_year_fraction_from_actual_expiry() {
+        let now = NaiveDate::from_ymd_opt(2025, 3, 28).unwrap();
+        let t = year_fraction_from_expiry_code_with_now("28MAR26", now);
+        assert!((t - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn invalid_expiry_falls_back_to_30_days() {
+        let now = NaiveDate::from_ymd_opt(2025, 3, 28).unwrap();
+        let t = year_fraction_from_expiry_code_with_now("bad", now);
+        assert!((t - (30.0 / 365.0)).abs() < 1e-12);
     }
 }
