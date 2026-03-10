@@ -60,3 +60,22 @@ fn converts_derive_ticker_to_unified_ticker() {
     assert_eq!(ticker.venue, VenueId::Derive);
     assert_eq!(ticker.iv, Some(0.60));
 }
+
+#[test]
+fn matches_instruments_with_small_strike_float_noise() {
+    let mut a = common::types::Instrument::from_clob_symbol(
+        VenueId::Deribit,
+        "ETH-28MAR26-3000-C",
+    )
+    .unwrap();
+    let mut b = common::types::Instrument::from_clob_symbol(
+        VenueId::Aevo,
+        "ETH-28MAR26-3000-C",
+    )
+    .unwrap();
+
+    a.strike = 3000.0000001;
+    b.strike = 3000.0000002;
+
+    assert!(match_instrument(&a, &b));
+}

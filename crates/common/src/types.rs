@@ -65,7 +65,7 @@ impl Instrument {
 pub fn match_instrument(a: &Instrument, b: &Instrument) -> bool {
     a.underlying == b.underlying
         && a.expiry == b.expiry
-        && (a.strike - b.strike).abs() < f64::EPSILON
+        && (a.strike - b.strike).abs() < 0.01
         && a.option_type == b.option_type
 }
 
