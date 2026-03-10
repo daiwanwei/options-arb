@@ -323,3 +323,68 @@ fn parse_group_key(value: &str) -> (String, String, f64) {
         .unwrap_or_default();
     (underlying, expiry, strike)
 }
+
+#[derive(Debug, Clone)]
+pub struct ZeroDteSignal {
+    pub instrument_symbol: String,
+    pub fair_value: f64,
+    pub stryke_price: f64,
+    pub expected_edge: f64,
+    pub timestamp_ms: i64,
+}
+
+pub fn scan_0dte_opportunities(
+    deribit_tickers: &[Ticker],
+    stryke_tickers: &[Ticker],
+    hours_to_expiry: i64,
+    risk_free_rate: f64,
+    min_edge: f64,
+) -> Vec<ZeroDteSignal> {
+    let mut out = Vec::new();
+    let maturity_years = (hours_to_expiry as f64 / 24.0 / 365.0).max(1e-6);
+
+    for deribit in deribit_tickers {
+        for stryke in stryke_tickers {
+            if !match_instrument(&deribit.instrument, &stryke.instrument) {
+                continue;
+            }
+
+            let spot = deribit
+                .index_price
+                .or(deribit.mark_price)
+                .or(stryke.index_price)
+                .unwrap_or(0.0);
+            let strike = deribit.instrument.strike;
+            let iv = deribit.iv.or(deribit.ask_iv).unwrap_or(0.0);
+            let option_kind = match deribit.instrument.option_type {
+                OptionType::Call => pricing::OptionKind::Call,
+                OptionType::Put => pricing::OptionKind::Put,
+            };
+
+            let fair_value = pricing::black_scholes_price(
+                spot,
+                strike,
+                maturity_years,
+                risk_free_rate,
+                iv,
+                option_kind,
+            );
+
+            let stryke_price = stryke.ask.unwrap_or(stryke.mark_price.unwrap_or(0.0));
+            let protocol_fee = stryke_price * 0.15;
+            let expected_edge = fair_value - stryke_price - protocol_fee;
+
+            if expected_edge > min_edge {
+                out.push(ZeroDteSignal {
+                    instrument_symbol: stryke.instrument.venue_symbol.clone(),
+                    fair_value,
+                    stryke_price,
+                    expected_edge,
+                    timestamp_ms: deribit.timestamp_ms.min(stryke.timestamp_ms),
+                });
+            }
+        }
+    }
+
+    out
+}

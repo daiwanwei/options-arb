@@ -5,4 +5,5 @@ edition = "2021"
 
 [dependencies]
 common = { path = "../common" }
+pricing = { path = "../pricing" }
 serde = { version = "1", features = ["derive"] }
