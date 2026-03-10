@@ -5,12 +5,161 @@ use common::types::{DeribitTicker, Greeks, OrderBook, OrderBookLevel, Ticker, Ve
 use futures_util::{SinkExt, StreamExt};
 use serde_json::Value;
 use tokio::sync::mpsc;
+use tokio::sync::Mutex;
 use tokio::time::{sleep, Duration};
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
+use std::time::Instant;
 
 pub const DERIBIT_MAINNET_WS: &str = "wss://www.deribit.com/ws/api/v2";
 pub const DERIBIT_TESTNET_WS: &str = "wss://test.deribit.com/ws/api/v2";
+pub const DERIBIT_MAINNET_REST: &str = "https://www.deribit.com/api/v2";
+pub const DERIBIT_TESTNET_REST: &str = "https://test.deribit.com/api/v2";
+
+#[derive(Debug, Clone)]
+pub struct DeribitCredentials {
+    pub client_id: String,
+    pub client_secret: String,
+}
+
+#[derive(Debug, Clone)]
+struct CachedToken {
+    value: String,
+    expires_at: Instant,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct AuthResult {
+    pub access_token: String,
+    pub expires_in: u64,
+}
+
+pub struct DeribitRestClient {
+    http: reqwest::Client,
+    base_url: String,
+    credentials: DeribitCredentials,
+    token: Mutex<Option<CachedToken>>,
+}
+
+impl DeribitRestClient {
+    pub fn new(base_url: &str, client_id: impl Into<String>, client_secret: impl Into<String>) -> Self {
+        Self {
+            http: reqwest::Client::new(),
+            base_url: base_url.trim_end_matches('/').to_string(),
+            credentials: DeribitCredentials {
+                client_id: client_id.into(),
+                client_secret: client_secret.into(),
+            },
+            token: Mutex::new(None),
+        }
+    }
+
+    pub async fn ensure_access_token(&self) -> Result<String> {
+        {
+            let guard = self.token.lock().await;
+            if let Some(token) = guard.as_ref() {
+                if Instant::now() < token.expires_at {
+                    return Ok(token.value.clone());
+                }
+            }
+        }
+
+        self.refresh_access_token().await
+    }
+
+    pub async fn refresh_access_token(&self) -> Result<String> {
+        let auth_url = format!("{}/public/auth", self.base_url);
+        let payload = serde_json::json!({
+            "grant_type": "client_credentials",
+            "client_id": self.credentials.client_id,
+            "client_secret": self.credentials.client_secret,
+        });
+
+        let response = self.http.post(auth_url).json(&payload).send().await?.error_for_status()?;
+        let value = response.json::<Value>().await?;
+        let auth = parse_auth_response(&value)?;
+        let token_value = auth.access_token.clone();
+
+        let mut guard = self.token.lock().await;
+        let ttl = auth.expires_in.saturating_sub(30);
+        *guard = Some(CachedToken {
+            value: auth.access_token,
+            expires_at: Instant::now() + Duration::from_secs(ttl),
+        });
+
+        Ok(token_value)
+    }
+
+    pub async fn place_limit_order(
+        &self,
+        instrument_name: &str,
+        amount: f64,
+        price: f64,
+        is_buy: bool,
+    ) -> Result<String> {
+        let token = self.ensure_access_token().await?;
+        let side_path = if is_buy { "buy" } else { "sell" };
+        let url = format!("{}/private/{side_path}", self.base_url);
+        let payload = serde_json::json!({
+            "instrument_name": instrument_name,
+            "amount": amount,
+            "type": "limit",
+            "price": price,
+        });
+
+        let response = self
+            .http
+            .post(url)
+            .bearer_auth(token)
+            .json(&payload)
+            .send()
+            .await?
+            .error_for_status()?;
+        let value = response.json::<Value>().await?;
+        extract_order_id(&value)
+    }
+
+    pub async fn cancel_order(&self, order_id: &str) -> Result<String> {
+        let token = self.ensure_access_token().await?;
+        let url = format!("{}/private/cancel", self.base_url);
+        let payload = serde_json::json!({ "order_id": order_id });
+
+        let response = self
+            .http
+            .post(url)
+            .bearer_auth(token)
+            .json(&payload)
+            .send()
+            .await?
+            .error_for_status()?;
+        let value = response.json::<Value>().await?;
+        extract_order_id(&value)
+    }
+}
+
+pub fn parse_auth_response(value: &Value) -> Result<AuthResult> {
+    let result = &value["result"];
+    let access_token = result["access_token"]
+        .as_str()
+        .ok_or_else(|| anyhow!("missing access_token in auth response"))?
+        .to_string();
+    let expires_in = result["expires_in"]
+        .as_u64()
+        .ok_or_else(|| anyhow!("missing expires_in in auth response"))?;
+    Ok(AuthResult {
+        access_token,
+        expires_in,
+    })
+}
+
+pub fn extract_order_id(value: &Value) -> Result<String> {
+    value["result"]["order"]["order_id"]
+        .as_str()
+        .or_else(|| value["result"]["order_id"].as_str())
+        .or_else(|| value["result"]["label"].as_str())
+        .map(ToString::to_string)
+        .ok_or_else(|| anyhow!("missing order id in response"))
+}
 
 pub struct DeribitWsClient {
     url: &'static str,
