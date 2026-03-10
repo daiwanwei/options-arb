@@ -183,7 +183,9 @@ dependencies = [
 name = "connector-premia"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "common",
+ "serde",
 ]
 
 [[package]]
