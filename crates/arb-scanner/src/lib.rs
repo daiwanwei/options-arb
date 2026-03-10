@@ -213,3 +213,49 @@ fn estimated_slippage(buy: &Ticker, sell: &Ticker, bps: f64) -> f64 {
 fn year_fraction_from_expiry_code(_expiry: &str) -> f64 {
     30.0 / 365.0
 }
+
+#[derive(Debug, Clone)]
+pub struct VolLagSignal {
+    pub instrument_symbol: String,
+    pub deribit_iv: f64,
+    pub premia_iv: f64,
+    pub oracle_iv: Option<f64>,
+    pub iv_gap: f64,
+    pub timestamp_ms: i64,
+}
+
+pub fn scan_cefi_amm_vol_lag(
+    deribit_tickers: &[Ticker],
+    premia_tickers: &[Ticker],
+    oracle_ivs: &HashMap<String, f64>,
+    min_iv_gap: f64,
+) -> Vec<VolLagSignal> {
+    let mut out = Vec::new();
+
+    for deribit in deribit_tickers {
+        for premia in premia_tickers {
+            if !match_instrument(&deribit.instrument, &premia.instrument) {
+                continue;
+            }
+
+            let deribit_iv = deribit.iv.or(deribit.ask_iv).unwrap_or(0.0);
+            let premia_iv = premia.iv.or(premia.ask_iv).unwrap_or(0.0);
+            let iv_gap = deribit_iv - premia_iv;
+            if iv_gap < min_iv_gap {
+                continue;
+            }
+
+            let oracle_iv = oracle_ivs.get(&deribit.instrument.venue_symbol).copied();
+            out.push(VolLagSignal {
+                instrument_symbol: deribit.instrument.venue_symbol.clone(),
+                deribit_iv,
+                premia_iv,
+                oracle_iv,
+                iv_gap,
+                timestamp_ms: deribit.timestamp_ms.min(premia.timestamp_ms),
+            });
+        }
+    }
+
+    out
+}
