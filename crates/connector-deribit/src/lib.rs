@@ -249,6 +249,30 @@ impl DeribitWsClient {
         Err(anyhow!("failed to reconnect after retries"))
     }
 
+    pub async fn reconnect_and_resubscribe(&self, channels: &[String]) -> Result<()> {
+        for attempt in 0..=5 {
+            match connect_async(self.url).await {
+                Ok((mut ws, _)) => {
+                    let heartbeat = build_set_heartbeat_request(1, 60);
+                    ws.send(Message::Text(heartbeat.to_string().into())).await?;
+
+                    if !channels.is_empty() {
+                        let subscribe = build_subscribe_request(2, channels);
+                        ws.send(Message::Text(subscribe.to_string().into())).await?;
+                    }
+
+                    ws.close(None).await?;
+                    return Ok(());
+                }
+                Err(_) => {
+                    sleep(Duration::from_millis(backoff_delay_ms(attempt))).await;
+                }
+            }
+        }
+
+        Err(anyhow!("failed to reconnect and resubscribe"))
+    }
+
     async fn connect_once(&self) -> Result<()> {
         let (mut ws, _) = connect_async(self.url).await?;
         ws.close(None).await?;
@@ -274,6 +298,40 @@ pub fn build_subscribe_request(id: u64, channels: &[String]) -> Value {
         "method": "public/subscribe",
         "params": { "channels": channels },
     })
+}
+
+pub fn build_set_heartbeat_request(id: u64, interval_sec: u64) -> Value {
+    serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "method": "public/set_heartbeat",
+        "params": {
+            "interval": interval_sec,
+        }
+    })
+}
+
+pub fn build_public_test_request(id: u64) -> Value {
+    serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "method": "public/test",
+        "params": {}
+    })
+}
+
+pub fn heartbeat_reply_if_requested(incoming_text: &str) -> Result<Option<Value>> {
+    let parsed: Value = serde_json::from_str(incoming_text)?;
+    if parsed["method"].as_str() != Some("heartbeat") {
+        return Ok(None);
+    }
+
+    if parsed["params"]["type"].as_str() == Some("test_request") {
+        let id = parsed["id"].as_u64().unwrap_or(0);
+        return Ok(Some(build_public_test_request(id)));
+    }
+
+    Ok(None)
 }
 
 pub fn parse_ticker_notification(text: &str) -> Result<Option<Ticker>> {
@@ -348,6 +406,12 @@ pub fn parse_orderbook_notification(
     };
 
     Ok(Some(orderbook))
+}
+
+pub fn reset_local_orderbook_on_reconnect(local_book: &mut LocalOrderBook) {
+    local_book.last_sequence = None;
+    local_book.bids.clear();
+    local_book.asks.clear();
 }
 
 fn parse_orderbook_levels(value: &Value) -> Vec<(f64, f64)> {
