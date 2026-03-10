@@ -12,3 +12,4 @@ tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "ti
 tokio-tungstenite = { workspace = true }
 futures-util = "0.3"
 tokio-stream = "0.1"
+reqwest = { workspace = true }

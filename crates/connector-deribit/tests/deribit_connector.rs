@@ -1,6 +1,7 @@
 use connector_deribit::{
-    backoff_delay_ms, build_subscribe_request, channel_names, parse_orderbook_notification,
-    parse_ticker_notification, DeribitWsClient, LocalOrderBook,
+    backoff_delay_ms, build_subscribe_request, channel_names, extract_order_id,
+    parse_auth_response, parse_orderbook_notification, parse_ticker_notification, DeribitWsClient,
+    LocalOrderBook,
 };
 
 #[test]
@@ -115,4 +116,33 @@ fn parses_orderbook_snapshot_then_delta() {
 fn client_uses_expected_default_url() {
     let client = DeribitWsClient::new(connector_deribit::DERIBIT_TESTNET_WS);
     assert_eq!(client.url(), connector_deribit::DERIBIT_TESTNET_WS);
+}
+
+#[test]
+fn parses_deribit_auth_response() {
+    let value = serde_json::json!({
+        "jsonrpc": "2.0",
+        "result": {
+            "access_token": "token-abc",
+            "expires_in": 900
+        }
+    });
+
+    let auth = parse_auth_response(&value).expect("auth parse should succeed");
+    assert_eq!(auth.access_token, "token-abc");
+    assert_eq!(auth.expires_in, 900);
+}
+
+#[test]
+fn extracts_order_id_from_private_response() {
+    let value = serde_json::json!({
+        "result": {
+            "order": {
+                "order_id": "ETH-123"
+            }
+        }
+    });
+
+    let order_id = extract_order_id(&value).expect("order id should exist");
+    assert_eq!(order_id, "ETH-123");
 }
