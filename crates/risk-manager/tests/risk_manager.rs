@@ -15,7 +15,14 @@ fn rejects_trade_when_position_limit_breached() {
         },
     };
 
-    let positions = vec![Position::new("ETH-28MAR26-3000-C", "ETH", 9.0, 10.0, 1.0, 20.0)];
+    let positions = vec![Position::new(
+        "ETH-28MAR26-3000-C",
+        "ETH",
+        9.0,
+        10.0,
+        1.0,
+        20.0,
+    )];
     let margin = MarginState { utilization: 0.3 };
     let intent = TradeIntent::new("ETH-28MAR26-3000-C", "ETH", 3.0, 2.0, 0.2, 10.0);
 

@@ -2,11 +2,9 @@ use common::types::{match_instrument, OptionType, VenueId};
 
 #[test]
 fn parses_clob_symbol_into_instrument() {
-    let instrument = common::types::Instrument::from_clob_symbol(
-        VenueId::Deribit,
-        "BTC-27DEC24-50000-C",
-    )
-    .expect("instrument should parse");
+    let instrument =
+        common::types::Instrument::from_clob_symbol(VenueId::Deribit, "BTC-27DEC24-50000-C")
+            .expect("instrument should parse");
 
     assert_eq!(instrument.underlying, "BTC");
     assert_eq!(instrument.strike, 50_000.0);
@@ -15,16 +13,10 @@ fn parses_clob_symbol_into_instrument() {
 
 #[test]
 fn matches_instruments_across_venues() {
-    let a = common::types::Instrument::from_clob_symbol(
-        VenueId::Deribit,
-        "ETH-28MAR26-3000-C",
-    )
-    .unwrap();
-    let b = common::types::Instrument::from_clob_symbol(
-        VenueId::Derive,
-        "ETH-28MAR26-3000-C",
-    )
-    .unwrap();
+    let a = common::types::Instrument::from_clob_symbol(VenueId::Deribit, "ETH-28MAR26-3000-C")
+        .unwrap();
+    let b =
+        common::types::Instrument::from_clob_symbol(VenueId::Derive, "ETH-28MAR26-3000-C").unwrap();
 
     assert!(match_instrument(&a, &b));
 }

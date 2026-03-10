@@ -1,7 +1,7 @@
+use common::types::VenueId;
 use connector_stryke::{
     market_address, normalize_premium_to_ticker, protocol_fee_multiplier, short_expiry_filter_hours,
 };
-use common::types::VenueId;
 
 #[test]
 fn exposes_known_market_addresses() {

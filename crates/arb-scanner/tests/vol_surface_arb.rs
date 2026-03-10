@@ -1,6 +1,5 @@
 use arb_scanner::{
-    generate_surface_trade_legs, scan_vol_surface_arbitrage, SurfacePointInput,
-    SurfaceSignalType,
+    generate_surface_trade_legs, scan_vol_surface_arbitrage, SurfacePointInput, SurfaceSignalType,
 };
 
 #[test]
@@ -14,8 +13,12 @@ fn detects_calendar_and_butterfly_anomalies() {
     ];
 
     let signals = scan_vol_surface_arbitrage(&points, 0.08, 0.15);
-    assert!(signals.iter().any(|s| s.signal_type == SurfaceSignalType::Calendar));
-    assert!(signals.iter().any(|s| s.signal_type == SurfaceSignalType::Butterfly));
+    assert!(signals
+        .iter()
+        .any(|s| s.signal_type == SurfaceSignalType::Calendar));
+    assert!(signals
+        .iter()
+        .any(|s| s.signal_type == SurfaceSignalType::Butterfly));
 }
 
 #[test]

@@ -1,4 +1,6 @@
-use pricing::{black_scholes_price, detect_surface_arbitrage, put_call_parity_gap, OptionKind, SurfacePoint};
+use pricing::{
+    black_scholes_price, detect_surface_arbitrage, put_call_parity_gap, OptionKind, SurfacePoint,
+};
 
 #[test]
 fn black_scholes_call_and_put_are_reasonable() {

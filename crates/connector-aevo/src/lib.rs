@@ -6,9 +6,7 @@ pub const AEVO_REST_BASE: &str = "https://api.aevo.xyz";
 pub const AEVO_WS_BASE: &str = "wss://ws.aevo.xyz";
 
 pub fn build_markets_url(asset: &str, instrument_type: &str) -> String {
-    format!(
-        "{AEVO_REST_BASE}/markets?asset={asset}&instrument_type={instrument_type}"
-    )
+    format!("{AEVO_REST_BASE}/markets?asset={asset}&instrument_type={instrument_type}")
 }
 
 pub fn orderbook_channel(instrument: &str) -> String {
@@ -57,6 +55,12 @@ impl AevoLocalOrderBook {
         }
 
         Ok(())
+    }
+}
+
+impl Default for AevoLocalOrderBook {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

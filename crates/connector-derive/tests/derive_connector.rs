@@ -1,9 +1,15 @@
-use connector_derive::{build_json_rpc_request, reconnect_delay_ms, to_unified_ticker, RawDeriveTicker};
 use common::types::VenueId;
+use connector_derive::{
+    build_json_rpc_request, reconnect_delay_ms, to_unified_ticker, RawDeriveTicker,
+};
 
 #[test]
 fn builds_json_rpc_payload() {
-    let payload = build_json_rpc_request(1, "public/get_ticker", serde_json::json!({"instrument_name": "ETH-28MAR26-3000-C"}));
+    let payload = build_json_rpc_request(
+        1,
+        "public/get_ticker",
+        serde_json::json!({"instrument_name": "ETH-28MAR26-3000-C"}),
+    );
     assert_eq!(payload["jsonrpc"], "2.0");
     assert_eq!(payload["id"], 1);
     assert_eq!(payload["method"], "public/get_ticker");

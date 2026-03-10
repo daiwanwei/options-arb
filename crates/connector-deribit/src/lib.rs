@@ -72,6 +72,12 @@ impl LocalOrderBook {
     }
 }
 
+impl Default for LocalOrderBook {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct RawDeribitTicker {
     pub instrument_name: String,
