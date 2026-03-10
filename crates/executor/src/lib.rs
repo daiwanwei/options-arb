@@ -157,10 +157,18 @@ pub async fn execute_kill_switch<C: VenueOrderClient + Sync>(
     Ok(join_all(tasks).await)
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct VenueAuthConfig {
+    pub api_key: Option<String>,
+    pub api_secret: Option<String>,
+    pub auth_header: Option<String>,
+}
+
 #[derive(Clone, Default)]
 pub struct HttpOrderClient {
     client: reqwest::Client,
     venue_endpoints: HashMap<String, String>,
+    venue_auth: HashMap<String, VenueAuthConfig>,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -182,6 +190,53 @@ impl HttpOrderClient {
             .insert(venue.to_string(), endpoint.to_string());
         self
     }
+
+    pub fn with_endpoint_and_auth(
+        mut self,
+        venue: &str,
+        endpoint: &str,
+        auth_header: Option<String>,
+    ) -> Self {
+        self.venue_endpoints
+            .insert(venue.to_string(), endpoint.to_string());
+
+        if let Some(value) = auth_header {
+            self.venue_auth
+                .entry(venue.to_string())
+                .or_default()
+                .auth_header = Some(value);
+        }
+
+        self
+    }
+
+    pub fn with_auth_config(mut self, venue: &str, auth: VenueAuthConfig) -> Self {
+        self.venue_auth.insert(venue.to_string(), auth);
+        self
+    }
+}
+
+fn auth_headers_for_venue(venue: &str, auth: Option<&VenueAuthConfig>) -> Vec<(&'static str, String)> {
+    let Some(auth) = auth else {
+        return Vec::new();
+    };
+
+    let mut headers = Vec::new();
+
+    if let Some(value) = auth.auth_header.as_ref() {
+        headers.push(("Authorization", value.clone()));
+    }
+
+    if venue.eq_ignore_ascii_case("aevo") {
+        if let Some(key) = auth.api_key.as_ref() {
+            headers.push(("AEVO-KEY", key.clone()));
+        }
+        if let Some(secret) = auth.api_secret.as_ref() {
+            headers.push(("AEVO-SECRET", secret.clone()));
+        }
+    }
+
+    headers
 }
 
 impl VenueOrderClient for HttpOrderClient {
@@ -201,13 +256,14 @@ impl VenueOrderClient for HttpOrderClient {
                 side: if request.is_buy { "buy" } else { "sell" },
             };
 
-            let response = self
-                .client
-                .post(endpoint)
-                .json(&payload)
-                .send()
-                .await?
-                .error_for_status()?;
+            let mut request_builder = self.client.post(endpoint).json(&payload);
+            for (header_name, header_value) in
+                auth_headers_for_venue(&request.venue, self.venue_auth.get(&request.venue))
+            {
+                request_builder = request_builder.header(header_name, header_value);
+            }
+
+            let response = request_builder.send().await?.error_for_status()?;
 
             let parsed = response.json::<HttpOrderResponse>().await.ok();
             let order_id = parsed
@@ -231,6 +287,39 @@ impl VenueOrderClient for HttpOrderClient {
                 status,
             })
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{auth_headers_for_venue, VenueAuthConfig};
+
+    #[test]
+    fn maps_aevo_auth_config_to_expected_headers() {
+        let auth = VenueAuthConfig {
+            api_key: Some("test-key".to_string()),
+            api_secret: Some("test-secret".to_string()),
+            auth_header: Some("Bearer test-token".to_string()),
+        };
+
+        let headers = auth_headers_for_venue("Aevo", Some(&auth));
+        assert!(headers.iter().any(|(k, v)| *k == "Authorization" && v == "Bearer test-token"));
+        assert!(headers.iter().any(|(k, v)| *k == "AEVO-KEY" && v == "test-key"));
+        assert!(headers.iter().any(|(k, v)| *k == "AEVO-SECRET" && v == "test-secret"));
+    }
+
+    #[test]
+    fn skips_aevo_specific_headers_for_other_venues() {
+        let auth = VenueAuthConfig {
+            api_key: Some("test-key".to_string()),
+            api_secret: Some("test-secret".to_string()),
+            auth_header: Some("Bearer deribit-token".to_string()),
+        };
+
+        let headers = auth_headers_for_venue("Deribit", Some(&auth));
+        assert!(headers.iter().any(|(k, v)| *k == "Authorization" && v == "Bearer deribit-token"));
+        assert!(!headers.iter().any(|(k, _)| *k == "AEVO-KEY"));
+        assert!(!headers.iter().any(|(k, _)| *k == "AEVO-SECRET"));
     }
 }
 
