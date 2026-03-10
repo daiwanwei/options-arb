@@ -1,0 +1,3 @@
+environment = "dev"
+log_level = "info"
+deribit_ws_url = "wss://www.deribit.com/ws/api/v2"
