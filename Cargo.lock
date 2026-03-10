@@ -1316,6 +1316,7 @@ dependencies = [
  "anyhow",
  "common",
  "executor",
+ "tokio",
  "tracing",
  "tracing-subscriber",
 ]
